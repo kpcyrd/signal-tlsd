@@ -1,0 +1,4 @@
+Dockerfile
+.dockerignore
+target
+.env
