@@ -2,3 +2,4 @@ Dockerfile
 .dockerignore
 target
 .env
+*.pem
