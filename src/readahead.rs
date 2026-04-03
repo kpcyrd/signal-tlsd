@@ -1,3 +1,4 @@
+use crate::errors::*;
 use std::pin::Pin;
 use std::task::Poll;
 use tokio::io::{self, AsyncRead, AsyncWrite, ReadBuf};
@@ -58,11 +59,13 @@ impl<S: AsyncRead + Unpin> AsyncRead for ReadAhead<S> {
 
 impl<S: AsyncWrite + Unpin> AsyncWrite for ReadAhead<S> {
     fn poll_write(
-        mut self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
+        self: Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
-        Pin::new(&mut self.stream).poll_write(cx, buf)
+        // Do not allow writing any TLS handshake errors
+        trace!("Intercepted attempted write of {} bytes", buf.len());
+        Poll::Ready(Ok(buf.len()))
     }
 
     fn poll_flush(

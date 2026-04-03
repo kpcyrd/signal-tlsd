@@ -1,12 +1,12 @@
+mod errors;
 mod readahead;
 mod rules;
 
+use crate::errors::*;
 use crate::readahead::ReadAhead;
 use crate::rules::Rules;
-use anyhow::{Context, Error, Result};
 use clap::{ArgAction, Parser};
 use env_logger::Env;
-use log::{debug, info, warn};
 use std::sync::Arc;
 use tokio::io::{self, AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
