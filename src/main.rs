@@ -1,19 +1,17 @@
+mod readahead;
 mod rules;
 
+use crate::readahead::ReadAhead;
 use crate::rules::Rules;
 use anyhow::{Context, Result};
 use clap::{ArgAction, Parser};
 use env_logger::Env;
 use log::{debug, info, warn};
-use std::pin::Pin;
 use std::sync::Arc;
-use std::task::Poll;
-use tokio::io::{self, AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
+use tokio::io::{self, AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
 use tokio_rustls::rustls;
-
-const BUF_SIZE: usize = 1 << 14;
 
 #[derive(Parser)]
 #[command(version, override_usage = env!("CARGO_BIN_NAME"))]
@@ -36,78 +34,6 @@ struct Args {
     allow: Vec<String>,
 }
 
-struct ReadAhead<S> {
-    stream: S,
-    buf: [u8; BUF_SIZE],
-    cursor: usize,
-}
-
-impl<S> ReadAhead<S> {
-    fn new(stream: S) -> Self {
-        Self {
-            stream,
-            buf: [0; BUF_SIZE],
-            cursor: 0,
-        }
-    }
-
-    fn buffered(&self) -> &[u8] {
-        &self.buf[..self.cursor]
-    }
-}
-
-impl<S: AsyncRead + Unpin> AsyncRead for ReadAhead<S> {
-    fn poll_read(
-        mut self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        buf: &mut ReadBuf<'_>,
-    ) -> Poll<io::Result<()>> {
-        let before = buf.filled().len();
-        if let Poll::Ready(x) = Pin::new(&mut self.stream).poll_read(cx, buf) {
-            let buf = buf.filled();
-            let new = &buf[before..];
-
-            if !new.is_empty() {
-                let cursor = self.cursor;
-                let buffered = &mut self.buf[cursor..];
-                let Some(dest) = buffered.get_mut(..new.len()) else {
-                    return Poll::Ready(Err(io::Error::other("buffer full")));
-                };
-                dest.copy_from_slice(new);
-                self.cursor += new.len();
-            }
-
-            Poll::Ready(x)
-        } else {
-            Poll::Pending
-        }
-    }
-}
-
-impl<S: AsyncWrite + Unpin> AsyncWrite for ReadAhead<S> {
-    fn poll_write(
-        mut self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        buf: &[u8],
-    ) -> Poll<io::Result<usize>> {
-        Pin::new(&mut self.stream).poll_write(cx, buf)
-    }
-
-    fn poll_flush(
-        mut self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.stream).poll_flush(cx)
-    }
-
-    fn poll_shutdown(
-        mut self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.stream).poll_shutdown(cx)
-    }
-}
-
 async fn accept<S: AsyncRead + AsyncWrite + Unpin>(stream: S, rules: &Rules) {
     let acceptor = tokio_rustls::LazyConfigAcceptor::new(
         rustls::server::Acceptor::default(),
@@ -115,7 +41,7 @@ async fn accept<S: AsyncRead + AsyncWrite + Unpin>(stream: S, rules: &Rules) {
     );
     tokio::pin!(acceptor);
 
-    let (server_name, mut stream) = match acceptor.as_mut().await {
+    let (server_name, stream) = match acceptor.as_mut().await {
         Ok(start) => {
             let client_hello = start.client_hello();
             let Some(server_name) = client_hello.server_name() else {
@@ -150,7 +76,7 @@ async fn accept<S: AsyncRead + AsyncWrite + Unpin>(stream: S, rules: &Rules) {
     };
 
     debug!("Flushed buffered data to remote server");
-    if let Err(err) = io::copy_bidirectional(&mut stream.stream, &mut remote).await {
+    if let Err(err) = io::copy_bidirectional(&mut stream.into_inner(), &mut remote).await {
         warn!("Error while forwarding connection: {err:#}");
     }
 
