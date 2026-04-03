@@ -111,6 +111,11 @@ async fn accept<S: AsyncReadWrite>(
             }
         }
         Err(err) => {
+            if err.kind() == io::ErrorKind::UnexpectedEof {
+                debug!("Connection closed before TLS client hello could be read");
+                return;
+            }
+
             debug!("Failed to read TLS client hello: {err:#}");
             let Some(stream) = acceptor.take_io() else {
                 return;
