@@ -7,12 +7,16 @@ use crate::readahead::ReadAhead;
 use crate::rules::Rules;
 use clap::{ArgAction, Parser};
 use env_logger::Env;
+use std::path::PathBuf;
 use std::sync::Arc;
+use tokio::fs;
 use tokio::io::{self, AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
 use tokio::task::JoinSet;
 use tokio::time::{Duration, timeout};
-use tokio_rustls::rustls;
+use tokio_rustls::TlsAcceptor;
+use tokio_rustls::rustls::pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject};
+use tokio_rustls::rustls::{self, ServerConfig};
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -38,6 +42,15 @@ struct Args {
     /// Fallback destination for non-TLS connections or unrecognized destionations
     #[arg(short = 'F', long = "fallback")]
     fallback: Option<String>,
+    /// Do not expect an outer TLS layer, assume the outer TLS layer has already been terminated
+    #[arg(short = 'N')]
+    no_tls: bool,
+    /// Path to TLS certificate for outer TLS layer (PEM format)
+    #[arg(long = "cert", env = "TLS_CERT_PATH")]
+    cert: Option<PathBuf>,
+    /// Path to TLS private key for outer TLS layer (PEM format)
+    #[arg(long = "private-key", env = "TLS_PRIVATE_KEY_PATH")]
+    private_key: Option<PathBuf>,
 }
 
 async fn connect<A: ToSocketAddrs>(addr: A) -> Result<TcpStream> {
@@ -47,7 +60,30 @@ async fn connect<A: ToSocketAddrs>(addr: A) -> Result<TcpStream> {
         .map_err(Error::from)
 }
 
-async fn accept<S: AsyncRead + AsyncWrite + Unpin>(stream: S, rules: &Rules) {
+// Allow dynamic dispatch of TLS and non-TLS stream
+trait AsyncReadWrite: AsyncRead + AsyncWrite + Unpin + Send {}
+impl<T: AsyncRead + AsyncWrite + Unpin + Send> AsyncReadWrite for T {}
+
+async fn accept<S: AsyncReadWrite>(
+    stream: S,
+    tls_config: Option<Arc<ServerConfig>>,
+    rules: &Rules,
+) {
+    // If enabled, perform outer TLS handshake
+    let stream: Box<dyn AsyncReadWrite> = if let Some(config) = tls_config {
+        let acceptor = TlsAcceptor::from(config);
+        match acceptor.accept(stream).await {
+            Ok(stream) => Box::new(stream),
+            Err(err) => {
+                debug!("Failed to accept outer TLS connection: {err:#}");
+                return;
+            }
+        }
+    } else {
+        Box::new(stream)
+    };
+
+    // Read inner TLS client hello
     let acceptor = tokio_rustls::LazyConfigAcceptor::new(
         rustls::server::Acceptor::default(),
         ReadAhead::new(stream),
@@ -83,6 +119,7 @@ async fn accept<S: AsyncRead + AsyncWrite + Unpin>(stream: S, rules: &Rules) {
         }
     };
 
+    // Setup remote connection
     let remote = if let Some(server_name) = server_name {
         connect((server_name, 443)).await
     } else if let Some(fallback) = rules.fallback() {
@@ -136,6 +173,46 @@ async fn sigterm() {
     set.join_next().await;
 }
 
+async fn setup_outer_tls_config(args: &Args) -> Result<Arc<ServerConfig>> {
+    // Ensure necessary paths are configured
+    let cert_file = args
+        .cert
+        .as_ref()
+        .context("TLS certificate path must be provided when TLS is enabled")?;
+
+    let private_key_file = args
+        .private_key
+        .as_ref()
+        .context("TLS private key path must be provided when TLS is enabled")?;
+
+    // Read from disk
+    let cert = fs::read(&cert_file)
+        .await
+        .with_context(|| format!("Failed to read TLS certificate file: {cert_file:?}"))?;
+
+    let private_key = fs::read(&private_key_file)
+        .await
+        .with_context(|| format!("Failed to read TLS private key file: {private_key_file:?}"))?;
+
+    // Parse file contents
+    let certs = CertificateDer::pem_slice_iter(&cert)
+        .map(|cert| cert.map_err(Error::from))
+        .collect::<Result<Vec<_>>>()
+        .with_context(|| format!("Failed to parse TLS certificate from PEM file: {cert_file:?}"))?;
+
+    let private_key = PrivateKeyDer::from_pem_slice(&private_key).with_context(|| {
+        format!("Failed to parse TLS private key from PEM file: {private_key_file:?}")
+    })?;
+
+    // Finalize TLS config
+    let config = ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(certs, private_key)
+        .context("Failed to create TLS server config")?;
+
+    Ok(Arc::new(config))
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
@@ -149,6 +226,14 @@ async fn main() -> Result<()> {
     };
     env_logger::init_from_env(Env::default().default_filter_or(log_level));
 
+    // Load TLS certificate and private key
+    let tls_config = if !args.no_tls {
+        Some(setup_outer_tls_config(&args).await?)
+    } else {
+        None
+    };
+
+    // Setup forwarding rules
     let mut rules = if !args.allow.is_empty() {
         Rules::from_iter(args.allow)
     } else {
@@ -164,14 +249,22 @@ async fn main() -> Result<()> {
             let listener = TcpListener::bind(&args.bind)
                 .await
                 .with_context(|| format!("Failed to bind to address: {:?}", args.bind))?;
+
             info!("Listening for connections...");
             loop {
-                let (stream, _) = listener.accept().await.unwrap();
+                let (stream, _) = match listener.accept().await {
+                    Ok(accept) => accept,
+                    Err(err) => {
+                        warn!("Failed to accept incoming connection: {err:#}");
+                        continue;
+                    },
+                };
+                let tls_config = tls_config.clone();
                 let rules = rules.clone();
 
                 tokio::spawn(async move {
                     debug!("Accepted new TCP connection");
-                    accept(stream, &rules).await;
+                    accept(stream, tls_config, &rules).await;
                     debug!("Connection has been closed");
                 });
             }
