@@ -1,21 +1,21 @@
 mod errors;
 mod readahead;
 mod rules;
+mod signals;
+mod tls;
 
 use crate::errors::*;
 use crate::readahead::ReadAhead;
 use crate::rules::Rules;
+use crate::tls::Tls;
 use clap::{ArgAction, Parser};
 use env_logger::Env;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::fs;
 use tokio::io::{self, AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
-use tokio::task::JoinSet;
 use tokio::time::{Duration, timeout};
 use tokio_rustls::TlsAcceptor;
-use tokio_rustls::rustls::pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject};
 use tokio_rustls::rustls::{self, ServerConfig};
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -151,29 +151,7 @@ async fn accept<S: AsyncReadWrite>(
     debug!("Finished data forwarding");
 }
 
-// Handle shutdown signals so we can run this as pid1
-async fn sigterm() {
-    let mut set = JoinSet::new();
-    // On ctrl-c, shutdown
-    set.spawn(async {
-        let _ = tokio::signal::ctrl_c().await;
-    });
-
-    #[cfg(unix)]
-    {
-        // On SIGTERM, shutdown
-        use tokio::signal::unix;
-        if let Ok(mut signal) = unix::signal(unix::SignalKind::terminate()) {
-            set.spawn(async move {
-                signal.recv().await;
-            });
-        }
-    }
-
-    set.join_next().await;
-}
-
-async fn setup_outer_tls_config(args: &Args) -> Result<Arc<ServerConfig>> {
+async fn setup_outer_tls_config(args: &Args) -> Result<Tls> {
     // Ensure necessary paths are configured
     let cert_file = args
         .cert
@@ -185,32 +163,8 @@ async fn setup_outer_tls_config(args: &Args) -> Result<Arc<ServerConfig>> {
         .as_ref()
         .context("TLS private key path must be provided when TLS is enabled")?;
 
-    // Read from disk
-    let cert = fs::read(&cert_file)
-        .await
-        .with_context(|| format!("Failed to read TLS certificate file: {cert_file:?}"))?;
-
-    let private_key = fs::read(&private_key_file)
-        .await
-        .with_context(|| format!("Failed to read TLS private key file: {private_key_file:?}"))?;
-
-    // Parse file contents
-    let certs = CertificateDer::pem_slice_iter(&cert)
-        .map(|cert| cert.map_err(Error::from))
-        .collect::<Result<Vec<_>>>()
-        .with_context(|| format!("Failed to parse TLS certificate from PEM file: {cert_file:?}"))?;
-
-    let private_key = PrivateKeyDer::from_pem_slice(&private_key).with_context(|| {
-        format!("Failed to parse TLS private key from PEM file: {private_key_file:?}")
-    })?;
-
-    // Finalize TLS config
-    let config = ServerConfig::builder()
-        .with_no_client_auth()
-        .with_single_cert(certs, private_key)
-        .context("Failed to create TLS server config")?;
-
-    Ok(Arc::new(config))
+    let tls_config = Tls::init(cert_file.clone(), private_key_file.clone()).await?;
+    Ok(tls_config)
 }
 
 #[tokio::main]
@@ -259,7 +213,7 @@ async fn main() -> Result<()> {
                         continue;
                     },
                 };
-                let tls_config = tls_config.clone();
+                let tls_config = tls_config.as_ref().map(Tls::rustls_config);
                 let rules = rules.clone();
 
                 tokio::spawn(async move {
@@ -269,7 +223,9 @@ async fn main() -> Result<()> {
                 });
             }
         } => err,
-        // Signal handling for pid1
-        _ = sigterm() => Ok(()),
+        // SIGHUP for certificate reload
+        _ = signals::sighup(tls_config.as_ref()) => Ok(()),
+        // SIGTERM/SIGINT handling for pid1 compatibility
+        _ = signals::sigterm() => Ok(()),
     }
 }
