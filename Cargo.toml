@@ -8,5 +8,5 @@ anyhow = "1"
 clap = { version = "4", default-features = false, features = ["derive", "env", "help", "std"] }
 env_logger = { version = "0.11", default-features = false }
 log = "0.4"
-tokio = { version = "1.50", features = ["io-util", "macros", "net", "rt-multi-thread", "signal"] }
+tokio = { version = "1.50", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "time"] }
 tokio-rustls = "0.26"

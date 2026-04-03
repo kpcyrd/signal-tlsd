@@ -11,7 +11,10 @@ use std::sync::Arc;
 use tokio::io::{self, AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
+use tokio::time::{Duration, timeout};
 use tokio_rustls::rustls;
+
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Parser)]
 #[command(version, override_usage = env!("CARGO_BIN_NAME"))]
@@ -64,9 +67,16 @@ async fn accept<S: AsyncRead + AsyncWrite + Unpin>(stream: S, rules: &Rules) {
         return;
     }
 
-    let Ok(mut remote) = TcpStream::connect((server_name, 443)).await else {
-        warn!("Failed to connect to remote server");
-        return;
+    let mut remote = match timeout(CONNECT_TIMEOUT, TcpStream::connect((server_name, 443))).await {
+        Ok(Ok(stream)) => stream,
+        Ok(Err(err)) => {
+            warn!("Failed to connect to remote server: {err:#}");
+            return;
+        }
+        Err(_) => {
+            warn!("Timed out while connecting to remote server");
+            return;
+        }
     };
     debug!("Connected to remote server");
 
