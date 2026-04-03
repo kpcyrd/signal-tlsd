@@ -66,6 +66,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin + Send> AsyncReadWrite for T {}
 
 async fn accept<S: AsyncReadWrite>(
     stream: S,
+    port: u16,
     tls_config: Option<Arc<ServerConfig>>,
     rules: &Rules,
 ) {
@@ -75,7 +76,7 @@ async fn accept<S: AsyncReadWrite>(
         match acceptor.accept(stream).await {
             Ok(stream) => Box::new(stream),
             Err(err) => {
-                debug!("Failed to accept outer TLS connection: {err:#}");
+                debug!("X.X.X.X:{port}: Failed to accept outer TLS connection: {err:#}");
                 return;
             }
         }
@@ -94,29 +95,34 @@ async fn accept<S: AsyncReadWrite>(
         Ok(start) => {
             let client_hello = start.client_hello();
             let Some(server_name) = client_hello.server_name() else {
-                debug!("TLS client hello with no server name");
+                debug!("X.X.X.X:{port}: TLS client hello with no server name");
                 return;
             };
 
             let server_name = server_name.to_string();
             let stream = start.io;
-            info!("Received TLS client hello for server name: {server_name:?}");
-            debug!("Buffered {} bytes of client hello", stream.buffered().len());
+            info!("X.X.X.X:{port}: Received TLS client hello for server name: {server_name:?}");
+            debug!(
+                "X.X.X.X:{port}: Buffered {} bytes of client hello",
+                stream.buffered().len()
+            );
 
             if rules.allowed(&server_name) {
                 (Some(server_name), stream)
             } else {
-                debug!("Rejecting connection request, destination not allowed: {server_name:?}");
+                debug!(
+                    "X.X.X.X:{port}: Rejecting connection request, destination not allowed: {server_name:?}"
+                );
                 (None, stream)
             }
         }
         Err(err) => {
             if err.kind() == io::ErrorKind::UnexpectedEof {
-                debug!("Connection closed before TLS client hello could be read");
+                debug!("X.X.X.X:{port}: Connection closed before TLS client hello could be read");
                 return;
             }
 
-            debug!("Failed to read TLS client hello: {err:#}");
+            debug!("X.X.X.X:{port}: Failed to read TLS client hello: {err:#}");
             let Some(stream) = acceptor.take_io() else {
                 return;
             };
@@ -128,7 +134,7 @@ async fn accept<S: AsyncReadWrite>(
     let remote = if let Some(server_name) = server_name {
         connect((server_name, 443)).await
     } else if let Some(fallback) = rules.fallback() {
-        debug!("Falling back to configured fallback destination: {fallback:?}");
+        debug!("X.X.X.X:{port}: Falling back to configured fallback destination: {fallback:?}");
         connect(fallback).await
     } else {
         return;
@@ -137,29 +143,29 @@ async fn accept<S: AsyncReadWrite>(
     let mut remote = match remote {
         Ok(stream) => stream,
         Err(err) => {
-            warn!("Failed to connect to remote server: {err:#}");
+            warn!("X.X.X.X:{port}: Failed to connect to remote server: {err:#}");
             return;
         }
     };
-    debug!("Connected to remote server");
+    debug!("X.X.X.X:{port}: Connected to remote server");
 
     let Ok(_) = remote.write_all(stream.buffered()).await else {
-        warn!("Failed to forward buffered TLS client hello");
+        warn!("X.X.X.X:{port}: Failed to forward buffered TLS client hello");
         return;
     };
 
-    debug!("Flushed buffered data to remote server");
+    debug!("X.X.X.X:{port}: Flushed buffered data to remote server");
     if let Err(err) = io::copy_bidirectional(&mut stream.into_inner(), &mut remote).await {
         if err.kind() == io::ErrorKind::UnexpectedEof {
             // This is harmless, don't log as warning
-            debug!("Unclean TLS shutdown by peer");
+            debug!("X.X.X.X:{port}: Unclean TLS shutdown by peer");
         } else {
-            warn!("Error while forwarding connection: {err:#}");
-            trace!("Verbose error: {err:?}");
+            warn!("X.X.X.X:{port}: Error while forwarding connection: {err:#}");
+            trace!("X.X.X.X:{port}: Verbose error: {err:?}");
         }
     }
 
-    debug!("Finished data forwarding");
+    debug!("X.X.X.X:{port}: Finished data forwarding");
 }
 
 async fn setup_outer_tls_config(args: &Args) -> Result<Tls> {
@@ -218,20 +224,21 @@ async fn main() -> Result<()> {
 
             info!("Listening for connections...");
             loop {
-                let (stream, _) = match listener.accept().await {
+                let (stream, addr) = match listener.accept().await {
                     Ok(accept) => accept,
                     Err(err) => {
                         warn!("Failed to accept incoming connection: {err:#}");
                         continue;
                     },
                 };
+                let port = addr.port();
                 let tls_config = tls_config.as_ref().map(Tls::rustls_config);
                 let rules = rules.clone();
 
                 tokio::spawn(async move {
-                    debug!("Accepted new TCP connection");
-                    accept(stream, tls_config, &rules).await;
-                    debug!("Connection has been closed");
+                    debug!("X.X.X.X:{port}: Accepted new TCP connection");
+                    accept(stream, port, tls_config, &rules).await;
+                    debug!("X.X.X.X:{port}: Connection has been closed");
                 });
             }
         } => err,
