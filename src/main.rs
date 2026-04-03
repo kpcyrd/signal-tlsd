@@ -183,10 +183,11 @@ async fn main() -> Result<()> {
     let args = Args::parse();
 
     let log_level = match (args.quiet, args.verbose) {
-        (0, 0) => "info",
-        (0, 1) => "debug",
+        (0, 0) => "signal_tlsd=info",
+        (0, 1) => "info,signal_tlsd=debug",
+        (0, 2) => "debug,signal_tlsd=trace",
         (0, _) => "trace",
-        (1, _) => "warn",
+        (1, _) => "signal_tlsd=warn",
         _ => "off",
     };
     env_logger::init_from_env(Env::default().default_filter_or(log_level));
