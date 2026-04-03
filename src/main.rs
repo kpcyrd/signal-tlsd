@@ -3,13 +3,13 @@ mod rules;
 
 use crate::readahead::ReadAhead;
 use crate::rules::Rules;
-use anyhow::{Context, Result};
+use anyhow::{Context, Error, Result};
 use clap::{ArgAction, Parser};
 use env_logger::Env;
 use log::{debug, info, warn};
 use std::sync::Arc;
 use tokio::io::{self, AsyncRead, AsyncWrite, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
 use tokio::task::JoinSet;
 use tokio::time::{Duration, timeout};
 use tokio_rustls::rustls;
@@ -35,6 +35,16 @@ struct Args {
     bind: String,
     #[arg(short = 'A', long = "allow")]
     allow: Vec<String>,
+    /// Fallback destination for non-TLS connections or unrecognized destionations
+    #[arg(short = 'F', long = "fallback")]
+    fallback: Option<String>,
+}
+
+async fn connect<A: ToSocketAddrs>(addr: A) -> Result<TcpStream> {
+    timeout(CONNECT_TIMEOUT, TcpStream::connect(addr))
+        .await
+        .context("connection timed out")?
+        .map_err(Error::from)
 }
 
 async fn accept<S: AsyncRead + AsyncWrite + Unpin>(stream: S, rules: &Rules) {
@@ -51,30 +61,41 @@ async fn accept<S: AsyncRead + AsyncWrite + Unpin>(stream: S, rules: &Rules) {
                 debug!("TLS client hello with no server name");
                 return;
             };
-            (server_name.to_string(), start.io)
+
+            let server_name = server_name.to_string();
+            let stream = start.io;
+            info!("Received TLS client hello for server name: {server_name:?}");
+            debug!("Buffered {} bytes of client hello", stream.buffered().len());
+
+            if rules.allowed(&server_name) {
+                (Some(server_name), stream)
+            } else {
+                debug!("Rejecting connection request, destination not allowed: {server_name:?}");
+                (None, stream)
+            }
         }
         Err(err) => {
             debug!("Failed to read TLS client hello: {err:#}");
-            return;
+            let Some(stream) = acceptor.take_io() else {
+                return;
+            };
+            (None, stream)
         }
     };
 
-    info!("Received TLS client hello for server name: {server_name:?}");
-    debug!("Buffered {} bytes of client hello", stream.buffered().len());
-
-    if !rules.allowed(&server_name) {
-        info!("Rejecting connection request, destination not allowed: {server_name:?}");
+    let remote = if let Some(server_name) = server_name {
+        connect((server_name, 443)).await
+    } else if let Some(fallback) = rules.fallback() {
+        debug!("Falling back to configured fallback destination: {fallback:?}");
+        connect(fallback).await
+    } else {
         return;
-    }
+    };
 
-    let mut remote = match timeout(CONNECT_TIMEOUT, TcpStream::connect((server_name, 443))).await {
-        Ok(Ok(stream)) => stream,
-        Ok(Err(err)) => {
+    let mut remote = match remote {
+        Ok(stream) => stream,
+        Err(err) => {
             warn!("Failed to connect to remote server: {err:#}");
-            return;
-        }
-        Err(_) => {
-            warn!("Timed out while connecting to remote server");
             return;
         }
     };
@@ -128,11 +149,12 @@ async fn main() -> Result<()> {
     };
     env_logger::init_from_env(Env::default().default_filter_or(log_level));
 
-    let rules = if !args.allow.is_empty() {
+    let mut rules = if !args.allow.is_empty() {
         Rules::from_iter(args.allow)
     } else {
         Rules::from_iter(rules::SIGNAL_HOSTS.iter().copied())
     };
+    rules.set_fallback(args.fallback);
     let rules = Arc::new(rules);
 
     tokio::select! {

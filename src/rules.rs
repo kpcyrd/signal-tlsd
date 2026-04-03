@@ -20,6 +20,7 @@ pub const SIGNAL_HOSTS: &[&str] = &[
 #[derive(Debug, PartialEq)]
 pub struct Rules {
     restricted_to: Option<BTreeSet<String>>,
+    fallback: Option<String>,
 }
 
 impl Rules {
@@ -30,12 +31,21 @@ impl Rules {
             true
         }
     }
+
+    pub fn set_fallback(&mut self, fallback: Option<String>) {
+        self.fallback = fallback;
+    }
+
+    pub fn fallback(&self) -> Option<&str> {
+        self.fallback.as_deref()
+    }
 }
 
 impl<I: Into<String>> FromIterator<I> for Rules {
     fn from_iter<T: IntoIterator<Item = I>>(iter: T) -> Self {
         let mut rules = Self {
             restricted_to: Some(Default::default()),
+            fallback: None,
         };
         for dest in iter {
             let dest = dest.into();
@@ -65,7 +75,8 @@ mod tests {
                     ["example.com".to_string(), "example.org".to_string()]
                         .into_iter()
                         .collect()
-                )
+                ),
+                fallback: None,
             }
         );
         assert!(rules.allowed("example.com"));
@@ -79,6 +90,7 @@ mod tests {
             rules,
             Rules {
                 restricted_to: Some(Default::default()),
+                fallback: None,
             }
         );
         assert!(!rules.allowed("example.com"));
@@ -91,6 +103,7 @@ mod tests {
             rules,
             Rules {
                 restricted_to: None,
+                fallback: None,
             }
         );
         assert!(rules.allowed("example.com"));
