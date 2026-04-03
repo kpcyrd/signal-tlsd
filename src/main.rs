@@ -150,7 +150,13 @@ async fn accept<S: AsyncReadWrite>(
 
     debug!("Flushed buffered data to remote server");
     if let Err(err) = io::copy_bidirectional(&mut stream.into_inner(), &mut remote).await {
-        warn!("Error while forwarding connection: {err:#}");
+        if err.kind() == io::ErrorKind::UnexpectedEof {
+            // This is harmless, don't log as warning
+            debug!("Unclean TLS shutdown by peer");
+        } else {
+            warn!("Error while forwarding connection: {err:#}");
+            trace!("Verbose error: {err:?}");
+        }
     }
 
     debug!("Finished data forwarding");
