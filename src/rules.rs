@@ -1,0 +1,99 @@
+use std::collections::BTreeSet;
+
+// List taken from https://github.com/signalapp/Signal-TLS-Proxy/blob/main/data/nginx-relay/nginx.conf
+pub const SIGNAL_HOSTS: &[&str] = &[
+    "chat.signal.org",
+    "storage.signal.org",
+    "cdn.signal.org",
+    "cdn2.signal.org",
+    "cdn3.signal.org",
+    "cdsi.signal.org",
+    "contentproxy.signal.org",
+    "grpc.chat.signal.org",
+    "sfu.voip.signal.org",
+    "svr2.signal.org",
+    "svrb.signal.org",
+    "updates.signal.org",
+    "updates2.signal.org",
+];
+
+#[derive(Debug, PartialEq)]
+pub struct Rules {
+    restricted_to: Option<BTreeSet<String>>,
+}
+
+impl Rules {
+    pub fn allowed(&self, server_name: &str) -> bool {
+        if let Some(set) = &self.restricted_to {
+            set.contains(server_name)
+        } else {
+            true
+        }
+    }
+}
+
+impl<I: Into<String>> FromIterator<I> for Rules {
+    fn from_iter<T: IntoIterator<Item = I>>(iter: T) -> Self {
+        let mut rules = Self {
+            restricted_to: Some(Default::default()),
+        };
+        for dest in iter {
+            let dest = dest.into();
+            if dest == "*" {
+                rules.restricted_to = None;
+                break;
+            }
+            if let Some(set) = &mut rules.restricted_to {
+                set.insert(dest);
+            }
+        }
+        rules
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rules_from_iter() {
+        let rules = Rules::from_iter(["example.com", "example.org"]);
+        assert_eq!(
+            rules,
+            Rules {
+                restricted_to: Some(
+                    ["example.com".to_string(), "example.org".to_string()]
+                        .into_iter()
+                        .collect()
+                )
+            }
+        );
+        assert!(rules.allowed("example.com"));
+        assert!(!rules.allowed("example.xyz"));
+    }
+
+    #[test]
+    fn rules_from_iter_empty() {
+        let rules = Rules::from_iter(Vec::<String>::new());
+        assert_eq!(
+            rules,
+            Rules {
+                restricted_to: Some(Default::default()),
+            }
+        );
+        assert!(!rules.allowed("example.com"));
+    }
+
+    #[test]
+    fn rules_allow_all() {
+        let rules = Rules::from_iter(["a", "*", "b"]);
+        assert_eq!(
+            rules,
+            Rules {
+                restricted_to: None,
+            }
+        );
+        assert!(rules.allowed("example.com"));
+        assert!(rules.allowed("example.xyz"));
+    }
+}

@@ -1,8 +1,10 @@
+mod rules;
+
+use crate::rules::Rules;
 use anyhow::{Context, Result};
 use clap::{ArgAction, Parser};
 use env_logger::Env;
 use log::{debug, info, warn};
-use std::collections::BTreeSet;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::Poll;
@@ -10,23 +12,6 @@ use tokio::io::{self, AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
 use tokio_rustls::rustls;
-
-// List taken from https://github.com/signalapp/Signal-TLS-Proxy/blob/main/data/nginx-relay/nginx.conf
-const SIGNAL_HOSTS: &[&str] = &[
-    "chat.signal.org",
-    "storage.signal.org",
-    "cdn.signal.org",
-    "cdn2.signal.org",
-    "cdn3.signal.org",
-    "cdsi.signal.org",
-    "contentproxy.signal.org",
-    "grpc.chat.signal.org",
-    "sfu.voip.signal.org",
-    "svr2.signal.org",
-    "svrb.signal.org",
-    "updates.signal.org",
-    "updates2.signal.org",
-];
 
 const BUF_SIZE: usize = 1 << 14;
 
@@ -47,6 +32,8 @@ struct Args {
         env = "BIND_ADDR"
     )]
     bind: String,
+    #[arg(short = 'A', long = "allow")]
+    allow: Vec<String>,
 }
 
 struct ReadAhead<S> {
@@ -121,7 +108,7 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for ReadAhead<S> {
     }
 }
 
-async fn accept<S: AsyncRead + AsyncWrite + Unpin>(stream: S, rules: &BTreeSet<&'static str>) {
+async fn accept<S: AsyncRead + AsyncWrite + Unpin>(stream: S, rules: &Rules) {
     let acceptor = tokio_rustls::LazyConfigAcceptor::new(
         rustls::server::Acceptor::default(),
         ReadAhead::new(stream),
@@ -146,7 +133,7 @@ async fn accept<S: AsyncRead + AsyncWrite + Unpin>(stream: S, rules: &BTreeSet<&
     info!("Received TLS client hello for server name: {server_name:?}");
     debug!("Buffered {} bytes of client hello", stream.buffered().len());
 
-    if !rules.contains(server_name.as_str()) {
+    if !rules.allowed(&server_name) {
         info!("Rejecting connection request, destination not allowed: {server_name:?}");
         return;
     }
@@ -167,7 +154,7 @@ async fn accept<S: AsyncRead + AsyncWrite + Unpin>(stream: S, rules: &BTreeSet<&
         warn!("Error while forwarding connection: {err:#}");
     }
 
-    debug!("Connection has been closed");
+    debug!("Finished data forwarding");
 }
 
 // Handle shutdown signals so we can run this as pid1
@@ -205,7 +192,12 @@ async fn main() -> Result<()> {
     };
     env_logger::init_from_env(Env::default().default_filter_or(log_level));
 
-    let rules = Arc::new(BTreeSet::from_iter(SIGNAL_HOSTS.iter().copied()));
+    let rules = if !args.allow.is_empty() {
+        Rules::from_iter(args.allow)
+    } else {
+        Rules::from_iter(rules::SIGNAL_HOSTS.iter().copied())
+    };
+    let rules = Arc::new(rules);
 
     tokio::select! {
         // The main daemon
@@ -220,7 +212,9 @@ async fn main() -> Result<()> {
                 let rules = rules.clone();
 
                 tokio::spawn(async move {
+                    debug!("Accepted new TCP connection");
                     accept(stream, &rules).await;
+                    debug!("Connection has been closed");
                 });
             }
         } => err,
