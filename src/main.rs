@@ -20,6 +20,7 @@ use tokio_rustls::TlsAcceptor;
 use tokio_rustls::rustls::{self, ServerConfig};
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
+const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
 const IDLE_TIMEOUT: Duration = Duration::from_secs(600);
 
 #[derive(Parser)]
@@ -129,14 +130,17 @@ async fn accept<S: AsyncReadWrite>(
     // If enabled, perform outer TLS handshake
     let stream: Box<dyn AsyncReadWrite> = if let Some(config) = tls_config {
         let acceptor = TlsAcceptor::from(config);
-        // TODO: timeout
-        match acceptor.accept(stream).await {
-            Ok(stream) => {
+        match timeout(HANDSHAKE_TIMEOUT, acceptor.accept(stream)).await {
+            Ok(Ok(stream)) => {
                 debug!("X.X.X.X:{port}: Completed outer TLS handshake");
                 Box::new(stream)
             }
-            Err(err) => {
+            Ok(Err(err)) => {
                 debug!("X.X.X.X:{port}: Failed to accept outer TLS connection: {err:#}");
+                return;
+            }
+            Err(_) => {
+                debug!("X.X.X.X:{port}: Outer TLS handshake timed out");
                 return;
             }
         }
@@ -151,20 +155,21 @@ async fn accept<S: AsyncReadWrite>(
     );
     tokio::pin!(acceptor);
 
-    // TODO: timeout
-    let (server_name, stream) = match acceptor.as_mut().await {
-        Ok(start) => {
+    let (server_name, stream) = match timeout(HANDSHAKE_TIMEOUT, acceptor.as_mut()).await {
+        Ok(Ok(start)) => {
             let client_hello = start.client_hello();
             let Some(server_name) = client_hello.server_name() else {
-                debug!("X.X.X.X:{port}: TLS client hello with no server name");
+                debug!("X.X.X.X:{port}: Received inner TLS client hello with no server name");
                 return;
             };
 
             let server_name = server_name.to_string();
             let stream = start.io;
-            info!("X.X.X.X:{port}: Received TLS client hello for server name: {server_name:?}");
+            info!(
+                "X.X.X.X:{port}: Received inner TLS client hello for server name: {server_name:?}"
+            );
             debug!(
-                "X.X.X.X:{port}: Buffered {} bytes of client hello",
+                "X.X.X.X:{port}: Buffered {} bytes of inner TLS client hello",
                 stream.buffered().len()
             );
 
@@ -177,17 +182,23 @@ async fn accept<S: AsyncReadWrite>(
                 (None, stream)
             }
         }
-        Err(err) => {
+        Ok(Err(err)) => {
             if err.kind() == io::ErrorKind::UnexpectedEof {
-                debug!("X.X.X.X:{port}: Connection closed before TLS client hello could be read");
+                debug!(
+                    "X.X.X.X:{port}: Connection closed before inner TLS client hello could be read"
+                );
                 return;
             }
 
-            debug!("X.X.X.X:{port}: Failed to read TLS client hello: {err:#}");
+            debug!("X.X.X.X:{port}: Failed to read inner TLS client hello: {err:#}");
             let Some(stream) = acceptor.take_io() else {
                 return;
             };
             (None, stream)
+        }
+        Err(_) => {
+            debug!("X.X.X.X:{port}: Inner TLS handshake timed out");
+            return;
         }
     };
 
