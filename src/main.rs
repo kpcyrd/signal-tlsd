@@ -12,13 +12,15 @@ use clap::{ArgAction, Parser};
 use env_logger::Env;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::io::{self, AsyncRead, AsyncWrite, AsyncWriteExt};
+use tokio::io::{self, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
+use tokio::sync::Notify;
 use tokio::time::{Duration, timeout};
 use tokio_rustls::TlsAcceptor;
 use tokio_rustls::rustls::{self, ServerConfig};
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
+const IDLE_TIMEOUT: Duration = Duration::from_secs(600);
 
 #[derive(Parser)]
 #[command(version, override_usage = env!("CARGO_BIN_NAME"))]
@@ -60,6 +62,60 @@ async fn connect<A: ToSocketAddrs>(addr: A) -> Result<TcpStream> {
         .map_err(Error::from)
 }
 
+async fn forward<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
+    mut reader: R,
+    mut writer: W,
+    notify: &Notify,
+) -> io::Result<()> {
+    let mut buffer = [0u8; 8192];
+    let ret = loop {
+        match reader.read(&mut buffer).await {
+            Ok(0) => break Ok(()), // EOF
+            Ok(n) => {
+                writer.write_all(&buffer[..n]).await?;
+                writer.flush().await?;
+                notify.notify_one();
+            }
+            Err(err) => break Err(err),
+        }
+    };
+    writer.shutdown().await.ok();
+    ret
+}
+
+async fn forward_bidirectional<C: AsyncReadWrite, U: AsyncReadWrite>(
+    port: u16,
+    client: C,
+    upstream: U,
+) -> io::Result<()> {
+    let (client_read, client_write) = io::split(client);
+    let (upstream_read, upstream_write) = io::split(upstream);
+
+    let notify = Notify::new();
+
+    tokio::select! {
+        // Forward client <-> upstream
+        ret = async {
+            let (client, upstream) = tokio::join!(
+                forward(client_read, upstream_write, &notify),
+                forward(upstream_read, client_write, &notify),
+            );
+            client?;
+            upstream?;
+            Ok(())
+        } => ret,
+        // Expire the connection if idle for too long
+        _ = async {
+            loop {
+                if timeout(IDLE_TIMEOUT, notify.notified()).await.is_err() {
+                    debug!("X.X.X.X:{port}: Connection idle for too long, shutting down");
+                    break;
+                }
+            }
+        } => Ok(()),
+    }
+}
+
 // Allow dynamic dispatch of TLS and non-TLS stream
 trait AsyncReadWrite: AsyncRead + AsyncWrite + Unpin + Send {}
 impl<T: AsyncRead + AsyncWrite + Unpin + Send> AsyncReadWrite for T {}
@@ -73,8 +129,12 @@ async fn accept<S: AsyncReadWrite>(
     // If enabled, perform outer TLS handshake
     let stream: Box<dyn AsyncReadWrite> = if let Some(config) = tls_config {
         let acceptor = TlsAcceptor::from(config);
+        // TODO: timeout
         match acceptor.accept(stream).await {
-            Ok(stream) => Box::new(stream),
+            Ok(stream) => {
+                debug!("X.X.X.X:{port}: Completed outer TLS handshake");
+                Box::new(stream)
+            }
             Err(err) => {
                 debug!("X.X.X.X:{port}: Failed to accept outer TLS connection: {err:#}");
                 return;
@@ -91,6 +151,7 @@ async fn accept<S: AsyncReadWrite>(
     );
     tokio::pin!(acceptor);
 
+    // TODO: timeout
     let (server_name, stream) = match acceptor.as_mut().await {
         Ok(start) => {
             let client_hello = start.client_hello();
@@ -155,7 +216,7 @@ async fn accept<S: AsyncReadWrite>(
     };
 
     debug!("X.X.X.X:{port}: Flushed buffered data to remote server");
-    if let Err(err) = io::copy_bidirectional(&mut stream.into_inner(), &mut remote).await {
+    if let Err(err) = forward_bidirectional(port, &mut stream.into_inner(), &mut remote).await {
         if err.kind() == io::ErrorKind::UnexpectedEof {
             // This is harmless, don't log as warning
             debug!("X.X.X.X:{port}: Unclean TLS shutdown by peer");
