@@ -237,7 +237,7 @@ async fn accept<S: AsyncReadWrite>(
         }
     }
 
-    debug!("X.X.X.X:{port}: Finished data forwarding");
+    trace!("X.X.X.X:{port}: Finished data forwarding");
 }
 
 async fn setup_outer_tls_config(args: &Args) -> Result<Tls> {
