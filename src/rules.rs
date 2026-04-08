@@ -49,12 +49,19 @@ impl<I: Into<String>> FromIterator<I> for Rules {
         };
         for dest in iter {
             let dest = dest.into();
-            if dest == "*" {
-                rules.restricted_to = None;
-                break;
-            }
-            if let Some(set) = &mut rules.restricted_to {
-                set.insert(dest);
+            match dest.as_str() {
+                // Lift any restrictions
+                "*" => {
+                    rules.restricted_to = None;
+                }
+                // Counts as custom filter to prevent default allow-list,
+                // but doesn't actually allow anything
+                "-" => (),
+                _ => {
+                    if let Some(set) = &mut rules.restricted_to {
+                        set.insert(dest);
+                    }
+                }
             }
         }
         rules
@@ -108,5 +115,41 @@ mod tests {
         );
         assert!(rules.allowed("example.com"));
         assert!(rules.allowed("example.xyz"));
+    }
+
+    #[test]
+    fn rules_disallow_all() {
+        // Prevent the default set from being used, but don't actually
+        // allow anything.  This routes everything to the fallback, effectively
+        // becoming a TLS offloader.
+        let rules = Rules::from_iter(["-"]);
+        assert_eq!(
+            rules,
+            Rules {
+                restricted_to: Some(Default::default()),
+                fallback: None,
+            }
+        );
+        assert!(!rules.allowed("example.com"));
+        assert!(!rules.allowed("example.xyz"));
+    }
+
+    #[test]
+    fn rules_edgecase_disallow_all_mixed_with_allow() {
+        // This doesn't make much sense, but define this anyway
+        let rules = Rules::from_iter(["example.com", "-", "example.org"]);
+        assert_eq!(
+            rules,
+            Rules {
+                restricted_to: Some(
+                    ["example.com".to_string(), "example.org".to_string()]
+                        .into_iter()
+                        .collect()
+                ),
+                fallback: None,
+            }
+        );
+        assert!(rules.allowed("example.com"));
+        assert!(!rules.allowed("example.xyz"));
     }
 }
