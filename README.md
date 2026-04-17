@@ -29,7 +29,7 @@ It was successfully field-tested in April 2026 to evade Russian censorship of Si
 A real-world example invocation may look like this:
 
 ```
-./signal-tlsd -B [::]:443 \
+./signal-tlsd -B '[::]:443' \
     --cert /var/lib/acme-redirect/live/example.com/fullchain \
     --private-key /var/lib/acme-redirect/live/example.com/privkey \
     -F 127.0.0.1:8080 -v
@@ -52,7 +52,7 @@ By default, if the inner connection either doesn't start with a TLS client hello
 Without any `-A` options used, it's using the built-in allow list of signal endpoints. If the `-A` option _is_ used, it starts with an empty allow list rejecting everything, and only the specified endpoints are allowed:
 
 ```
-./signal-tlsd -B [::]:443 \
+./signal-tlsd -B '[::]:443' \
     --cert /var/lib/acme-redirect/live/example.com/fullchain \
     --private-key /var/lib/acme-redirect/live/example.com/privkey \
     -A orcas.sink.yachts -A example.com
@@ -65,7 +65,7 @@ The special value `-` leaves the allow list unmodified, yet still counts as usin
 It's possible to use signal-tlsd as a regular off-the-shelf TLS termination proxy, without using the inner TLS feature at all. For this mode of operation, use an empty allow list (`-A -`) together with the `-F <endpoint>` option, causing everything to be forwarded to the fallback unconditionally.
 
 ```
-./signal-tlsd -B [::]:443 \
+./signal-tlsd -B '[::]:443' \
     --cert /var/lib/acme-redirect/live/example.com/fullchain \
     --private-key /var/lib/acme-redirect/live/example.com/privkey \
     -A - -F 127.0.0.1:8080 -v
