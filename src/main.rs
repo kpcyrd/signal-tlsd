@@ -42,7 +42,7 @@ struct Args {
     bind: String,
     #[arg(short = 'A', long = "allow")]
     allow: Vec<String>,
-    /// Fallback destination for non-TLS connections or unrecognized destionations
+    /// Fallback destination for non-TLS connections or unrecognized destinations
     #[arg(short = 'F', long = "fallback")]
     fallback: Option<String>,
     /// Do not expect an outer TLS layer, assume the outer TLS layer has already been terminated

@@ -1,6 +1,10 @@
 [package]
 name = "signal-tlsd"
 version = "0.1.0"
+description = "Standalone Rust implementation of Signal's domain fronting TLS proxy"
+authors = ["kpcyrd <git@rxv.cc>"]
+license = "MIT-0"
+repository = "https://github.com/kpcyrd/signal-tlsd"
 edition = "2024"
 
 [dependencies]
