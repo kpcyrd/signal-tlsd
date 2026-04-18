@@ -20,58 +20,58 @@ jobs:
       fail-fast: false
       matrix:
         os:
-        - name: ubuntu-24.04
-        - name: macos-latest
-        #- name: windows-latest
+          - name: ubuntu-24.04
+          - name: macos-latest
+          #- name: windows-latest
     steps:
-    - uses: actions/checkout@v6
-      with:
-        persist-credentials: false
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
-    - name: Set up cargo cache
-      uses: actions/cache@v5
-      with:
-        path: |
-          ~/.cargo/bin/
-          ~/.cargo/registry/index/
-          ~/.cargo/registry/cache/
-          ~/.cargo/git/db/
-          target/
-        key: ${{ runner.os }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: ${{ runner.os }}-cargo-release-
+      - name: Set up cargo cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-release-
 
-    - name: Build
-      run: cargo build --release --verbose
+      - name: Build
+        run: cargo build --release --verbose
 
   unit-test:
     runs-on: ubuntu-24.04
     steps:
-    - uses: actions/checkout@v6
-      with:
-        persist-credentials: false
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
-    - name: Set up cargo cache
-      uses: actions/cache@v5
-      with:
-        path: |
-          ~/.cargo/bin/
-          ~/.cargo/registry/index/
-          ~/.cargo/registry/cache/
-          ~/.cargo/git/db/
-          target/
-        key: ${{ runner.os }}-cargo-debug-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: ${{ runner.os }}-cargo-debug-
+      - name: Set up cargo cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-debug-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-debug-
 
-    - name: Run clippy
-      run: cargo clippy --all -- -D warnings
-    - name: Run tests
-      run: cargo test --all
+      - name: Run clippy
+        run: cargo clippy --all -- -D warnings
+      - name: Run tests
+        run: cargo test --all
 
   fmt:
     runs-on: ubuntu-24.04
     steps:
-    - uses: actions/checkout@v6
-      with:
-        persist-credentials: false
-    - name: Run cargo fmt
-      run: cargo fmt --all -- --check
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Run cargo fmt
+        run: cargo fmt --all -- --check
