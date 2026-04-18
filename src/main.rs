@@ -42,8 +42,8 @@ struct Args {
     bind: String,
     #[arg(short = 'A', long = "allow")]
     allow: Vec<String>,
-    /// Fallback destination for non-TLS connections or unrecognized destinations
-    #[arg(short = 'F', long = "fallback")]
+    /// Fallback destination if inner connection isn't TLS, or the SNI value is not on allowlist (<ip>:<port>)
+    #[arg(short = 'F', long = "fallback", env = "SIGNAL_TLSD_FALLBACK_ADDR")]
     fallback: Option<String>,
     /// Do not expect an outer TLS layer, assume the outer TLS layer has already been terminated
     #[arg(short = 'N')]
