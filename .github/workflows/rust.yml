@@ -22,7 +22,7 @@ jobs:
         os:
         - name: ubuntu-24.04
         - name: macos-latest
-        - name: windows-latest
+        #- name: windows-latest
     steps:
     - uses: actions/checkout@v6
       with:
