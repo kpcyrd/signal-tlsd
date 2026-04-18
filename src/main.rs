@@ -23,8 +23,9 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
 const IDLE_TIMEOUT: Duration = Duration::from_secs(600);
 
+/// Standalone Rust implementation of Signal's domain fronting TLS proxy
 #[derive(Parser)]
-#[command(version, override_usage = env!("CARGO_BIN_NAME"))]
+#[command(version, override_usage = concat!(env!("CARGO_BIN_NAME"), " [OPTIONS]"))]
 struct Args {
     /// Increase log level (can be set multiple times)
     #[arg(short = 'v', long = "verbose", action(ArgAction::Count))]
@@ -40,10 +41,11 @@ struct Args {
         env = "BIND_ADDR"
     )]
     bind: String,
+    /// Allowed destination server names (replaces default signal.org allowlist, can be set multiple times)
     #[arg(short = 'A', long = "allow")]
     allow: Vec<String>,
-    /// Fallback destination for non-TLS connections or unrecognized destinations
-    #[arg(short = 'F', long = "fallback")]
+    /// Fallback destination if inner connection isn't TLS, or the SNI value is not on allowlist (<addr>:<port>)
+    #[arg(short = 'F', long = "fallback", env = "SIGNAL_TLSD_FALLBACK_ADDR")]
     fallback: Option<String>,
     /// Do not expect an outer TLS layer, assume the outer TLS layer has already been terminated
     #[arg(short = 'N')]
