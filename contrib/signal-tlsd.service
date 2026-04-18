@@ -1,0 +1,32 @@
+# To configure certificates, either place them at the right location,
+# use symlinks, or use `systemctl edit signal-tlsd`, then add the following:
+#
+# [Service]
+# Environment=TLS_CERT_PATH=/your/path/fullchain.pem
+# Environment=TLS_PRIVATE_KEY_PATH=/your/path/privkey.pem
+#
+# Use systemctl daemon-reload afterwards.
+
+[Unit]
+Description=signal-tlsd: Standalone Rust implementation of Signal's domain fronting TLS proxy
+After=network-online.target remote-fs.target nss-lookup.target
+Wants=network-online.target
+
+[Service]
+User=signal-tlsd
+Environment=TLS_CERT_PATH=/var/lib/signal-tlsd/fullchain.pem
+Environment=TLS_PRIVATE_KEY_PATH=/var/lib/signal-tlsd/privkey.pem
+ExecStart=/usr/bin/signal-tlsd -B [::]:443
+
+CapabilityBoundingSet=
+MemoryDenyWriteExecute=yes
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectControlGroups=yes
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectSystem=strict
+RestrictSUIDSGID=yes
+
+[Install]
+WantedBy=multi-user.target
