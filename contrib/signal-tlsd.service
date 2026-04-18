@@ -18,7 +18,8 @@ Environment=TLS_CERT_PATH=/var/lib/signal-tlsd/fullchain.pem
 Environment=TLS_PRIVATE_KEY_PATH=/var/lib/signal-tlsd/privkey.pem
 ExecStart=/usr/bin/signal-tlsd -B [::]:443
 
-CapabilityBoundingSet=
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 MemoryDenyWriteExecute=yes
 NoNewPrivileges=yes
 PrivateTmp=yes
