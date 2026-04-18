@@ -47,9 +47,9 @@ https://signal.tube/#example.com
 
 By default, if the inner connection either doesn't start with a TLS client hello, or the inner SNI value does not match any configured endpoints, the connection is shut down. When setting `-F 127.0.0.1:8080` those connections aren't dropped, but instead forwarded to this default endpoint (together with the buffered data). This can be used to host regular websites on your cover domain, while still allowing Signal to use the same domain for its TLS connections.
 
-### Non-standard allow-list
+### Non-standard allowlist
 
-Without any `-A` options used, it's using the built-in allow list of signal endpoints. If the `-A` option _is_ used, it starts with an empty allow list rejecting everything, and only the specified endpoints are allowed:
+Without any `-A` options used, it's using the built-in allowlist of signal endpoints. If the `-A` option _is_ used, it starts with an empty allowlist rejecting everything, and only the specified endpoints are allowed:
 
 ```
 ./signal-tlsd -B '[::]:443' \
@@ -58,11 +58,11 @@ Without any `-A` options used, it's using the built-in allow list of signal endp
     -A orcas.sink.yachts -A example.com
 ```
 
-The special value `-` leaves the allow list unmodified, yet still counts as using the `-A` option, giving you an empty allow list instead of the standard built-in list.
+The special value `-` leaves the allowlist unmodified, yet still counts as using the `-A` option, giving you an empty allowlist instead of the standard built-in list.
 
 ### Running signal-tlsd as regular TLS termination proxy
 
-It's possible to use signal-tlsd as a regular off-the-shelf TLS termination proxy, without using the inner TLS feature at all. For this mode of operation, use an empty allow list (`-A -`) together with the `-F <endpoint>` option, causing everything to be forwarded to the fallback unconditionally.
+It's possible to use signal-tlsd as a regular off-the-shelf TLS termination proxy, without using the inner TLS feature at all. For this mode of operation, use an empty allowlist (`-A -`) together with the `-F <endpoint>` option, causing everything to be forwarded to the fallback unconditionally.
 
 ```
 ./signal-tlsd -B '[::]:443' \

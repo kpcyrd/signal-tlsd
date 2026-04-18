@@ -41,7 +41,7 @@ struct Args {
         env = "BIND_ADDR"
     )]
     bind: String,
-    /// Allowed destination server names (replaces default signal.org allow-list, can be set multiple times)
+    /// Allowed destination server names (replaces default signal.org allowlist, can be set multiple times)
     #[arg(short = 'A', long = "allow")]
     allow: Vec<String>,
     /// Fallback destination if inner connection isn't TLS, or the SNI value is not on allowlist (<addr>:<port>)

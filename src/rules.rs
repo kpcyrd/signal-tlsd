@@ -54,7 +54,7 @@ impl<I: Into<String>> FromIterator<I> for Rules {
                 "*" => {
                     rules.restricted_to = None;
                 }
-                // Counts as custom filter to prevent default allow-list,
+                // Counts as custom filter to prevent default allowlist,
                 // but doesn't actually allow anything
                 "-" => (),
                 _ => {
