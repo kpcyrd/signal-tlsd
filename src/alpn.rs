@@ -1,5 +1,5 @@
 use clap::error::*;
-use std::collections::BTreeMap;
+use indexmap::IndexMap;
 use std::str::FromStr;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -12,7 +12,7 @@ enum AlpnTarget {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Fallback {
-    alpn: BTreeMap<Vec<u8>, AlpnTarget>,
+    alpn: IndexMap<Vec<u8>, AlpnTarget>,
     default: Option<String>,
 }
 
@@ -40,7 +40,7 @@ impl FromStr for Fallback {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut fallback = Self {
-            alpn: BTreeMap::new(),
+            alpn: IndexMap::new(),
             default: None,
         };
         for chunk in s.split(',') {
@@ -71,7 +71,7 @@ mod tests {
         assert_eq!(
             fallback,
             Fallback {
-                alpn: BTreeMap::new(),
+                alpn: IndexMap::new(),
                 default: Some("example.com:80".to_string()),
             }
         );
@@ -89,7 +89,7 @@ mod tests {
         assert_eq!(
             fallback,
             Fallback {
-                alpn: BTreeMap::new(),
+                alpn: IndexMap::new(),
                 default: Some("".to_string()),
             }
         );
@@ -103,7 +103,7 @@ mod tests {
         assert_eq!(
             fallback,
             Fallback {
-                alpn: BTreeMap::from_iter([(b"http/1.1".to_vec(), AlpnTarget::Default)]),
+                alpn: IndexMap::from_iter([(b"http/1.1".to_vec(), AlpnTarget::Default)]),
                 default: Some("example.com:80".to_string()),
             }
         );
@@ -118,7 +118,7 @@ mod tests {
         assert_eq!(
             fallback,
             Fallback {
-                alpn: BTreeMap::from_iter([(
+                alpn: IndexMap::from_iter([(
                     b"http/1.1".to_vec(),
                     AlpnTarget::Value("127.0.0.1:8080".to_string())
                 )]),
@@ -136,7 +136,7 @@ mod tests {
         assert_eq!(
             fallback,
             Fallback {
-                alpn: BTreeMap::from_iter([(
+                alpn: IndexMap::from_iter([(
                     b"http/1.1".to_vec(),
                     AlpnTarget::Value("127.0.0.1:8080".to_string())
                 )]),
@@ -149,12 +149,41 @@ mod tests {
     }
 
     #[test]
-    fn test_fallback_alpn_http1_and_h2_only() {
+    fn test_fallback_alpn_prefer_http1_over_h2() {
         let fallback = Fallback::from_str("http/1.1=127.0.0.1:8080,h2=127.0.0.1:8081").unwrap();
         assert_eq!(
             fallback,
             Fallback {
-                alpn: BTreeMap::from_iter([
+                alpn: IndexMap::from_iter([
+                    (
+                        b"http/1.1".to_vec(),
+                        AlpnTarget::Value("127.0.0.1:8080".to_string())
+                    ),
+                    (
+                        b"h2".to_vec(),
+                        AlpnTarget::Value("127.0.0.1:8081".to_string())
+                    )
+                ]),
+                default: None,
+            }
+        );
+        assert_eq!(
+            fallback.alpn_protocols(),
+            vec![b"http/1.1".to_vec(), b"h2".to_vec()],
+        );
+        assert_eq!(fallback.resolve(None), None);
+        assert_eq!(fallback.resolve(Some(b"http/1.1")), Some("127.0.0.1:8080"));
+        assert_eq!(fallback.resolve(Some(b"h2")), Some("127.0.0.1:8081"));
+        assert_eq!(fallback.resolve(Some(b"xyz")), None);
+    }
+
+    #[test]
+    fn test_fallback_alpn_prefer_h2_over_http1() {
+        let fallback = Fallback::from_str("h2=127.0.0.1:8081,http/1.1=127.0.0.1:8080").unwrap();
+        assert_eq!(
+            fallback,
+            Fallback {
+                alpn: IndexMap::from_iter([
                     (
                         b"http/1.1".to_vec(),
                         AlpnTarget::Value("127.0.0.1:8080".to_string())
