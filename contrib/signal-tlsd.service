@@ -4,6 +4,8 @@
 # [Service]
 # Environment=TLS_CERT_PATH=/your/path/fullchain.pem
 # Environment=TLS_PRIVATE_KEY_PATH=/your/path/privkey.pem
+# # Optionally:
+# #Environment=SIGNAL_TLSD_FALLBACK_ADDR=127.0.0.1:8080
 #
 # Use systemctl daemon-reload afterwards.
 
