@@ -1,3 +1,4 @@
+mod alpn;
 mod errors;
 mod readahead;
 mod rules;
@@ -46,7 +47,7 @@ struct Args {
     allow: Vec<String>,
     /// Fallback destination if inner connection isn't TLS, or the SNI value is not on allowlist (<addr>:<port>)
     #[arg(short = 'F', long = "fallback", env = "SIGNAL_TLSD_FALLBACK_ADDR")]
-    fallback: Option<String>,
+    fallback: Option<alpn::Fallback>,
     /// Do not expect an outer TLS layer, assume the outer TLS layer has already been terminated
     #[arg(short = 'N')]
     no_tls: bool,
@@ -135,6 +136,10 @@ async fn accept<S: AsyncReadWrite>(
         match timeout(HANDSHAKE_TIMEOUT, acceptor.accept(stream)).await {
             Ok(Ok(stream)) => {
                 debug!("X.X.X.X:{port}: Completed outer TLS handshake");
+                let (_, session) = stream.get_ref();
+                if let Some(alpn) = session.alpn_protocol() {
+                    debug!("X.X.X.X:{port}: Negotiated ALPN protocol: {alpn:?}");
+                }
                 Box::new(stream)
             }
             Ok(Err(err)) => {
@@ -207,7 +212,7 @@ async fn accept<S: AsyncReadWrite>(
     // Setup remote connection
     let remote = if let Some(server_name) = server_name {
         connect((server_name, 443)).await
-    } else if let Some(fallback) = rules.fallback() {
+    } else if let Some(fallback) = rules.fallback(None) {
         debug!("X.X.X.X:{port}: Falling back to configured fallback destination: {fallback:?}");
         connect(fallback).await
     } else {
