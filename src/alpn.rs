@@ -26,8 +26,8 @@ impl Fallback {
             && let Some(value) = self.alpn.get(alpn)
         {
             match value {
-                AlpnTarget::Value(dest) => return Some(dest),
-                AlpnTarget::Default => return self.default.as_deref(),
+                AlpnTarget::Value(dest) => Some(dest),
+                AlpnTarget::Default => self.default.as_deref(),
             }
         } else {
             self.default.as_deref()
