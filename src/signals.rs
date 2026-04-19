@@ -26,7 +26,8 @@ pub async fn sigterm() {
 }
 
 pub async fn sighup(tls: Option<&Tls>) {
-    if cfg!(unix) {
+    #[cfg(unix)]
+    {
         use tokio::signal::unix;
         if let Ok(mut signals) = unix::signal(unix::SignalKind::hangup()) {
             while signals.recv().await.is_some() {
