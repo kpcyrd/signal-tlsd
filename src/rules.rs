@@ -171,7 +171,7 @@ mod tests {
     #[test]
     fn rules_with_default_and_alpn_fallback() {
         let mut rules = Rules::from_iter(["example.com", "example.org"]);
-        rules.set_fallback(Some("http1=,127.0.0.1:8080".parse().unwrap()));
+        rules.set_fallback(Some("http/1.1=,127.0.0.1:8080".parse().unwrap()));
         assert!(rules.allowed("example.com"));
         assert!(!rules.allowed("example.xyz"));
         assert_eq!(rules.fallback(None), Some("127.0.0.1:8080"));
@@ -181,10 +181,10 @@ mod tests {
     #[test]
     fn rules_with_alpn_only_fallback() {
         let mut rules = Rules::from_iter(["example.com", "example.org"]);
-        rules.set_fallback(Some("http1=127.0.0.1:8080".parse().unwrap()));
+        rules.set_fallback(Some("http/1.1=127.0.0.1:8080".parse().unwrap()));
         assert!(rules.allowed("example.com"));
         assert!(!rules.allowed("example.xyz"));
         assert_eq!(rules.fallback(None), None);
-        assert_eq!(rules.fallback(Some(b"http1")), Some("127.0.0.1:8080"));
+        assert_eq!(rules.fallback(Some(b"http/1.1")), Some("127.0.0.1:8080"));
     }
 }

@@ -77,8 +77,8 @@ mod tests {
         );
         assert_eq!(fallback.alpn_protocols(), Vec::<Vec<u8>>::new());
         assert_eq!(fallback.resolve(None), Some("example.com:80"));
-        // This technically can't happen because if http1 was negotiated, we also have a rule for it
-        assert_eq!(fallback.resolve(Some(b"http1")), Some("example.com:80"));
+        // This technically can't happen because if http/1.1 was negotiated, we also have a rule for it
+        assert_eq!(fallback.resolve(Some(b"http/1.1")), Some("example.com:80"));
     }
 
     // This case is barely valid, test to make sure this doesn't panic,
@@ -99,64 +99,64 @@ mod tests {
 
     #[test]
     fn test_fallback_default_and_alpn_http1() {
-        let fallback = Fallback::from_str("http1=,example.com:80").unwrap();
+        let fallback = Fallback::from_str("http/1.1=,example.com:80").unwrap();
         assert_eq!(
             fallback,
             Fallback {
-                alpn: BTreeMap::from_iter([(b"http1".to_vec(), AlpnTarget::Default)]),
+                alpn: BTreeMap::from_iter([(b"http/1.1".to_vec(), AlpnTarget::Default)]),
                 default: Some("example.com:80".to_string()),
             }
         );
-        assert_eq!(fallback.alpn_protocols(), vec![b"http1".to_vec()]);
+        assert_eq!(fallback.alpn_protocols(), vec![b"http/1.1".to_vec()]);
         assert_eq!(fallback.resolve(None), Some("example.com:80"));
-        assert_eq!(fallback.resolve(Some(b"http1")), Some("example.com:80"));
+        assert_eq!(fallback.resolve(Some(b"http/1.1")), Some("example.com:80"));
     }
 
     #[test]
     fn test_fallback_default_and_different_alpn_http1() {
-        let fallback = Fallback::from_str("http1=127.0.0.1:8080,example.com:80").unwrap();
+        let fallback = Fallback::from_str("http/1.1=127.0.0.1:8080,example.com:80").unwrap();
         assert_eq!(
             fallback,
             Fallback {
                 alpn: BTreeMap::from_iter([(
-                    b"http1".to_vec(),
+                    b"http/1.1".to_vec(),
                     AlpnTarget::Value("127.0.0.1:8080".to_string())
                 )]),
                 default: Some("example.com:80".to_string()),
             }
         );
-        assert_eq!(fallback.alpn_protocols(), vec![b"http1".to_vec()]);
+        assert_eq!(fallback.alpn_protocols(), vec![b"http/1.1".to_vec()]);
         assert_eq!(fallback.resolve(None), Some("example.com:80"));
-        assert_eq!(fallback.resolve(Some(b"http1")), Some("127.0.0.1:8080"));
+        assert_eq!(fallback.resolve(Some(b"http/1.1")), Some("127.0.0.1:8080"));
     }
 
     #[test]
     fn test_fallback_alpn_http1_only() {
-        let fallback = Fallback::from_str("http1=127.0.0.1:8080").unwrap();
+        let fallback = Fallback::from_str("http/1.1=127.0.0.1:8080").unwrap();
         assert_eq!(
             fallback,
             Fallback {
                 alpn: BTreeMap::from_iter([(
-                    b"http1".to_vec(),
+                    b"http/1.1".to_vec(),
                     AlpnTarget::Value("127.0.0.1:8080".to_string())
                 )]),
                 default: None,
             }
         );
-        assert_eq!(fallback.alpn_protocols(), vec![b"http1".to_vec()]);
+        assert_eq!(fallback.alpn_protocols(), vec![b"http/1.1".to_vec()]);
         assert_eq!(fallback.resolve(None), None);
-        assert_eq!(fallback.resolve(Some(b"http1")), Some("127.0.0.1:8080"));
+        assert_eq!(fallback.resolve(Some(b"http/1.1")), Some("127.0.0.1:8080"));
     }
 
     #[test]
     fn test_fallback_alpn_http1_and_h2_only() {
-        let fallback = Fallback::from_str("http1=127.0.0.1:8080,h2=127.0.0.1:8081").unwrap();
+        let fallback = Fallback::from_str("http/1.1=127.0.0.1:8080,h2=127.0.0.1:8081").unwrap();
         assert_eq!(
             fallback,
             Fallback {
                 alpn: BTreeMap::from_iter([
                     (
-                        b"http1".to_vec(),
+                        b"http/1.1".to_vec(),
                         AlpnTarget::Value("127.0.0.1:8080".to_string())
                     ),
                     (
@@ -169,10 +169,10 @@ mod tests {
         );
         assert_eq!(
             fallback.alpn_protocols(),
-            vec![b"h2".to_vec(), b"http1".to_vec()],
+            vec![b"h2".to_vec(), b"http/1.1".to_vec()],
         );
         assert_eq!(fallback.resolve(None), None);
-        assert_eq!(fallback.resolve(Some(b"http1")), Some("127.0.0.1:8080"));
+        assert_eq!(fallback.resolve(Some(b"http/1.1")), Some("127.0.0.1:8080"));
         assert_eq!(fallback.resolve(Some(b"h2")), Some("127.0.0.1:8081"));
         assert_eq!(fallback.resolve(Some(b"xyz")), None);
     }
