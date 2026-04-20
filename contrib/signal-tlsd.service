@@ -15,7 +15,8 @@ After=network-online.target remote-fs.target nss-lookup.target
 Wants=network-online.target
 
 [Service]
-User=signal-tlsd
+DynamicUser=yes
+Group=signal-tlsd
 Environment=TLS_CERT_PATH=/etc/signal-tlsd/fullchain.pem
 Environment=TLS_PRIVATE_KEY_PATH=/etc/signal-tlsd/privkey.pem
 ExecStart=/usr/bin/signal-tlsd -B [::]:443
