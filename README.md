@@ -31,10 +31,9 @@ It was successfully field-tested in April 2026 to evade Russian censorship of Si
 A real-world example invocation may look like this:
 
 ```
-./signal-tlsd -B '[::]:443' \
+./signal-tlsd -v -B '[::]:443' \
     --cert /var/lib/acme-redirect/live/example.com/fullchain \
-    --private-key /var/lib/acme-redirect/live/example.com/privkey \
-    -F 127.0.0.1:8080 -v
+    --private-key /var/lib/acme-redirect/live/example.com/privkey
 ```
 
 You may use [acme-redirect](https://github.com/kpcyrd/acme-redirect) to obtain your TLS certificates, but anything else works too.
