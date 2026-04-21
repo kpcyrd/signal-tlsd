@@ -26,6 +26,8 @@ It was successfully field-tested in April 2026 to evade Russian censorship of Si
 
 ## Usage
 
+<a href="https://repology.org/project/signal-tlsd/versions"><img align="right" src="https://repology.org/badge/vertical-allrepos/signal-tlsd.svg" alt="Packaging status"></a>
+
 A real-world example invocation may look like this:
 
 ```
