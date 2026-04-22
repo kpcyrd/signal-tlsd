@@ -1,1 +1,1 @@
-d /var/lib/signal-tlsd 0750 root signal-tlsd
+d /etc/signal-tlsd 0750 root signal-tlsd
