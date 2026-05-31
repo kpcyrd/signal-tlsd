@@ -38,7 +38,11 @@ impl Tls {
     }
 
     pub async fn reload(&self) -> Result<()> {
-        let new = load_from_disk(&self.cert_file, &self.private_key_file).await?;
+        let mut new = load_from_disk(&self.cert_file, &self.private_key_file).await?;
+
+        // Copy over alpn configuration
+        new.alpn_protocols = self.config.load().alpn_protocols.clone();
+
         self.config.store(Arc::new(new));
         Ok(())
     }
