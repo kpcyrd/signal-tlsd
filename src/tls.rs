@@ -1,3 +1,4 @@
+use crate::alpn::Fallback;
 use crate::errors::*;
 use arc_swap::ArcSwap;
 use std::path::Path;
@@ -14,8 +15,17 @@ pub struct Tls {
 }
 
 impl Tls {
-    pub async fn init(cert_file: PathBuf, private_key_file: PathBuf) -> Result<Self> {
-        let config = load_from_disk(&cert_file, &private_key_file).await?;
+    pub async fn init(
+        cert_file: PathBuf,
+        private_key_file: PathBuf,
+        fallback: Option<&Fallback>,
+    ) -> Result<Self> {
+        let mut config = load_from_disk(&cert_file, &private_key_file).await?;
+
+        if let Some(fallback) = fallback {
+            config.alpn_protocols = fallback.alpn_protocols();
+        }
+
         Ok(Self {
             config: ArcSwap::new(Arc::new(config)),
             cert_file,
@@ -28,7 +38,11 @@ impl Tls {
     }
 
     pub async fn reload(&self) -> Result<()> {
-        let new = load_from_disk(&self.cert_file, &self.private_key_file).await?;
+        let mut new = load_from_disk(&self.cert_file, &self.private_key_file).await?;
+
+        // Copy over alpn configuration
+        new.alpn_protocols = self.config.load().alpn_protocols.clone();
+
         self.config.store(Arc::new(new));
         Ok(())
     }

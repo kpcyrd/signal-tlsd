@@ -1,3 +1,4 @@
+mod alpn;
 mod errors;
 mod readahead;
 mod rules;
@@ -46,7 +47,7 @@ struct Args {
     allow: Vec<String>,
     /// Fallback destination if inner connection isn't TLS, or the SNI value is not on allowlist (<addr>:<port>)
     #[arg(short = 'F', long = "fallback", env = "SIGNAL_TLSD_FALLBACK_ADDR")]
-    fallback: Option<String>,
+    fallback: Option<alpn::Fallback>,
     /// Do not expect an outer TLS layer, assume the outer TLS layer has already been terminated
     #[arg(short = 'N')]
     no_tls: bool,
@@ -130,12 +131,20 @@ async fn accept<S: AsyncReadWrite>(
     rules: &Rules,
 ) {
     // If enabled, perform outer TLS handshake
-    let stream: Box<dyn AsyncReadWrite> = if let Some(config) = tls_config {
+    let (stream, alpn): (Box<dyn AsyncReadWrite>, _) = if let Some(config) = tls_config {
         let acceptor = TlsAcceptor::from(config);
         match timeout(HANDSHAKE_TIMEOUT, acceptor.accept(stream)).await {
             Ok(Ok(stream)) => {
                 debug!("X.X.X.X:{port}: Completed outer TLS handshake");
-                Box::new(stream)
+                let (_, session) = stream.get_ref();
+                let alpn = session.alpn_protocol().map(|alpn| {
+                    debug!(
+                        "X.X.X.X:{port}: Negotiated ALPN protocol: {:?}",
+                        bstr::BStr::new(alpn)
+                    );
+                    alpn.to_vec()
+                });
+                (Box::new(stream), alpn)
             }
             Ok(Err(err)) => {
                 debug!("X.X.X.X:{port}: Failed to accept outer TLS connection: {err:#}");
@@ -147,7 +156,7 @@ async fn accept<S: AsyncReadWrite>(
             }
         }
     } else {
-        Box::new(stream)
+        (Box::new(stream), None)
     };
 
     // Read inner TLS client hello
@@ -207,7 +216,7 @@ async fn accept<S: AsyncReadWrite>(
     // Setup remote connection
     let remote = if let Some(server_name) = server_name {
         connect((server_name, 443)).await
-    } else if let Some(fallback) = rules.fallback() {
+    } else if let Some(fallback) = rules.fallback(alpn.as_deref()) {
         debug!("X.X.X.X:{port}: Falling back to configured fallback destination: {fallback:?}");
         connect(fallback).await
     } else {
@@ -254,7 +263,12 @@ async fn setup_outer_tls_config(args: &Args) -> Result<Tls> {
         .as_ref()
         .context("TLS private key path must be provided when TLS is enabled")?;
 
-    let tls_config = Tls::init(cert_file.clone(), private_key_file.clone()).await?;
+    let tls_config = Tls::init(
+        cert_file.clone(),
+        private_key_file.clone(),
+        args.fallback.as_ref(),
+    )
+    .await?;
     Ok(tls_config)
 }
 
