@@ -175,7 +175,9 @@ mod tests {
         assert!(rules.allowed("example.com"));
         assert!(!rules.allowed("example.xyz"));
         assert_eq!(rules.fallback(None), Some("127.0.0.1:8080"));
-        assert_eq!(rules.fallback(Some(b"http1")), Some("127.0.0.1:8080"));
+        assert_eq!(rules.fallback(Some(b"http/1.1")), Some("127.0.0.1:8080"));
+        // Doesn't match any rule
+        assert_eq!(rules.fallback(Some(b"xyz")), Some("127.0.0.1:8080"));
     }
 
     #[test]
