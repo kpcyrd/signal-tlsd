@@ -1,4 +1,4 @@
-FROM rust:1-alpine3.23
+FROM rust:1-alpine3.24
 ENV RUSTFLAGS="-C strip=debuginfo"
 WORKDIR /app
 COPY . .
@@ -8,7 +8,7 @@ RUN --mount=type=cache,target=/var/cache/buildkit \
     cargo build --release --locked && \
     cp -v /var/cache/buildkit/target/release/signal-tlsd /
 
-FROM alpine:3.23
+FROM alpine:3.24
 RUN apk add libcap-setcap
 COPY --from=0 /signal-tlsd /
 RUN setcap cap_net_bind_service=+ep /signal-tlsd
