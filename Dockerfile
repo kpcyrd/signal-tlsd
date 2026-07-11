@@ -9,7 +9,7 @@ RUN --mount=type=cache,target=/var/cache/buildkit \
     cp -v /var/cache/buildkit/target/release/signal-tlsd /
 
 FROM alpine:3.24
-RUN apk add libcap-setcap
+RUN apk add --no-cache libcap-setcap
 COPY --from=0 /signal-tlsd /
 RUN setcap cap_net_bind_service=+ep /signal-tlsd
 USER nobody
