@@ -10,10 +10,17 @@ capabilities="^cap_net_bind_service"
 
 command_background=true
 pidfile="/run/$RC_SVCNAME.pid"
+extra_started_commands="reload"
 error_logger="logger -t '${RC_SVCNAME}' -p daemon.info"
 
 depend() {
 	use dns logger
 	need localmount net
 	after firewall
+}
+
+reload() {
+	ebegin "Reloading certificates"
+	start-stop-daemon --signal HUP --pidfile "$pidfile"
+	eend $?
 }
